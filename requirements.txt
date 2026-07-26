@@ -1,0 +1,10 @@
+# Detection-as-Code Foundry — real integrations
+langgraph>=1.0            # the authoring→proof orchestrator (StateGraph)
+pydantic>=2.0            # strict typed state / artifacts
+pyyaml>=6.0              # parse the authored Sigma rule
+fastmcp>=3.0             # governed MCP tool boundary (fetch vs. human-gated deploy)
+# Optional: real authoring. Unset -> runs offline on the shipped fixture, deterministic.
+anthropic>=0.40          # claude-opus-4-8 authors the rule when ANTHROPIC_API_KEY is set
+#
+# The PROOF core (src/engine.py) and the deterministic evaluator/gate have ZERO
+# third-party dependencies — `python src/run.py --evals` runs on stdlib alone.

@@ -1,0 +1,10 @@
+{
+  "id": "sigma-renamed-lolbin-originalfilename",
+  "partition": "blue",
+  "title": "Renamed System Utility Executed (OriginalFileName mismatch)",
+  "source": "SigmaHQ-pattern",
+  "provenance": "representative — distilled from SigmaHQ renamed-binary rules (proc_creation_win_renamed_*)",
+  "source_url": "https://github.com/SigmaHQ/sigma/tree/master/rules/windows/process_creation",
+  "techniques": ["T1036.003"],
+  "text": "Detects execution of a renamed system utility by comparing the PE metadata OriginalFileName / InternalName against the on-disk Image basename: when a known system binary's OriginalFileName (e.g. CertUtil.exe, RUNDLL32.EXE, MSHTA.EXE, powershell.exe) appears under a different on-disk filename, it is masquerading. Anchor detections on OriginalFileName rather than the Image path so a renamed or relocated LOLBin still fires. Counter to Masquerading Rename System Utilities. process_creation logsource windows. Defeats binary-rename and path-relocation evasions."
+}

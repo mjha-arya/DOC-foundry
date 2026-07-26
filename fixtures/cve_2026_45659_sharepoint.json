@@ -1,0 +1,6 @@
+{
+  "name": "cve-2026-45659-sharepoint-rce",
+  "raw_threat": "Microsoft SharePoint Server Remote Code Execution vulnerability CVE-2026-45659 (CVSS 8.8). A deserialization of untrusted data flaw in Microsoft SharePoint Server allows a remote attacker to execute arbitrary code on the server. The vulnerability was added to the CISA Known Exploited Vulnerabilities (KEV) catalog after active in-the-wild exploitation was observed. Exploitation targets the IIS worker process hosting SharePoint (w3wp.exe); successful post-exploitation is commonly followed by the worker process spawning command interpreters (cmd.exe, powershell.exe) and by the creation of malicious .aspx webshell files under the SharePoint web root. Defenders should detect exploitation and post-exploitation activity in process-creation and file/web-server telemetry.",
+  "source_type": "cve",
+  "source_ref": "CVE-2026-45659"
+}

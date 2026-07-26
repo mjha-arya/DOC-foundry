@@ -1,0 +1,14 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Secrets — model keys are read from the environment, never committed
+.env
+.env.*
+
+# Generated at runtime
+Outputs/
+.cache/

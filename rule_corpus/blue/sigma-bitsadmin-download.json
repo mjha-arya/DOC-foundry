@@ -1,0 +1,10 @@
+{
+  "id": "sigma-bitsadmin-download",
+  "partition": "blue",
+  "title": "File Download Via Bitsadmin",
+  "source": "SigmaHQ-pattern",
+  "provenance": "representative — distilled from SigmaHQ bitsadmin download rules",
+  "source_url": "https://github.com/SigmaHQ/sigma/tree/master/rules/windows/process_creation",
+  "techniques": ["T1105", "T1197"],
+  "text": "Detects bitsadmin.exe used to download a file via the Background Intelligent Transfer Service. Anchors on OriginalFileName 'bitsadmin.exe' and CommandLine contains '/transfer' or '/create' plus a URL. A sibling LOLBin download technique to certutil under Ingress Tool Transfer. process_creation logsource windows level medium. tags attack.t1105 attack.t1197."
+}

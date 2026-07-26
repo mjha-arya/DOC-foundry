@@ -1,0 +1,579 @@
+<!doctype html>
+<html lang="en" class="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Detection-as-Code Foundry — Live</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+tailwind.config = {
+  darkMode: 'class',
+  theme: { extend: {
+    colors: {
+      // JS references these six tokens by name — keep the names, tune the metal.
+      blue1:'#5b9dff',   // Blue team — author
+      red1:'#ff5468',    // Red team — adversary
+      green1:'#35d6a0',  // Referee — deterministic proof, exact and cool
+      amber1:'#f5b642',  // Kartikeya Gate — tempered gold
+      accent:'#ff6a2b',  // the forge itself — the human's action is molten
+      cyan1:'#38bdf8',   // Analyst / Telemetry / System — the instrument readout
+      // forge palette
+      ember:'#ff8a3d', emberdeep:'#e0501a', steel:'#8ba0bd', ink:'#07090e',
+    },
+    fontFamily: {
+      display: ['"Chakra Petch"','ui-sans-serif','system-ui','sans-serif'],
+      sans:    ['"IBM Plex Sans"','ui-sans-serif','system-ui','sans-serif'],
+      mono:    ['"IBM Plex Mono"','ui-monospace','SF Mono','Menlo','Consolas','monospace'],
+    },
+    keyframes: {
+      fade: { '0%':{opacity:0,transform:'translateY(4px)'}, '100%':{opacity:1,transform:'none'} },
+      pop:  { '0%':{transform:'scale(.9)'}, '60%':{transform:'scale(1.06)'}, '100%':{transform:'scale(1)'} },
+      throb:{ '0%,100%':{opacity:.5}, '50%':{opacity:1} },
+      blink:{ '0%,45%':{opacity:1}, '50%,100%':{opacity:0} },
+      flicker:{ '0%,100%':{opacity:1}, '50%':{opacity:.86} },
+    },
+    animation: { fade:'fade .3s ease', pop:'pop .45s ease', throb:'throb 1.4s ease-in-out infinite',
+                 blink:'blink 1.1s step-end infinite', flicker:'flicker 3.6s ease-in-out infinite' },
+  }}
+}
+</script>
+<style type="text/tailwindcss">
+  @layer base {
+    body { font-family:'IBM Plex Sans',ui-sans-serif,system-ui,sans-serif; }
+    h1,h2,h3,.hud { font-family:'Chakra Petch',ui-sans-serif,system-ui,sans-serif; }
+    /* The forge floor: cold tempered-steel black, a low ember glow rising from the
+       bench, and a faint instrument grid — so the whole page reads as a piece of
+       bench equipment, not a web template. (No purple gradient anywhere.) */
+    body::before{
+      content:''; position:fixed; inset:0; z-index:-1; pointer-events:none;
+      background:
+        radial-gradient(125% 80% at 50% 120%, rgba(255,106,43,.17), transparent 55%),
+        radial-gradient(90% 55% at 10% -10%, rgba(56,189,248,.06), transparent 55%),
+        linear-gradient(rgba(139,160,189,.045) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(139,160,189,.045) 1px, transparent 1px);
+      background-size: 100% 100%, 100% 100%, 34px 34px, 34px 34px;
+      background-color:#07090e;
+    }
+  }
+  @layer components {
+    .chip { @apply text-[10.5px] border border-steel/25 rounded-full px-2 py-[2px] text-steel font-mono tracking-tight; }
+    /* One instrument-panel treatment used everywhere: cool steel face, a hairline of
+       top-light, seated on the bench with a deep soft shadow. */
+    .panel { @apply rounded-xl border border-slate-700/55 bg-[#0d121b]/85 backdrop-blur-[2px]
+             shadow-[inset_0_1px_0_rgba(255,255,255,.045),0_24px_46px_-28px_rgba(0,0,0,.95)]; }
+    .hud { @apply uppercase tracking-[.16em]; }
+  }
+  @layer base {
+    /* ---- the agent graph ------------------------------------------------ */
+    /* Node states: idle (dim) → work (the model call is in flight) → done.
+       Driven by real events only: `work` starts when the provider's token sink
+       opens a call, `done` when the graph node actually completes. */
+    .gnode rect { fill:#0d121b; stroke:#334155; stroke-width:1.2; transition:all .3s ease; }
+    .gnode text { fill:#94a3b8; transition:fill .3s ease; }
+    .gnode      { opacity:.45; transition:opacity .3s ease; }
+    .gnode.done { opacity:1; }
+    .gnode.done rect { stroke:#64748b; }
+    .gnode.done .glabel { fill:#e2e8f0; }
+    .gnode.work { opacity:1; }
+    .gnode.work rect { stroke-width:2; animation:throb 1.4s ease-in-out infinite; }
+    .gnode.work .glabel { fill:#fff; }
+
+    .gnode[data-k="analyst"].work rect, .gnode[data-k="telemetry"].work rect { stroke:#38bdf8; filter:drop-shadow(0 0 9px rgba(56,189,248,.65)); }
+    .gnode[data-k="blue"].work rect     { stroke:#5b9dff; filter:drop-shadow(0 0 9px rgba(91,157,255,.65)); }
+    .gnode[data-k="red"].work rect      { stroke:#ff5468; filter:drop-shadow(0 0 9px rgba(255,84,104,.65)); }
+    .gnode[data-r="ref"].work rect      { stroke:#35d6a0; filter:drop-shadow(0 0 9px rgba(53,214,160,.6)); }
+    .gnode[data-k="gate"].work rect     { stroke:#f5b642; filter:drop-shadow(0 0 9px rgba(245,182,66,.6)); }
+    /* the referee is deterministic: it never "thinks", it lands — flash it */
+    .gnode[data-r="ref"].hit rect       { stroke:#35d6a0; fill:#0d2018; }
+
+    .edge { fill:none; stroke:#334155; stroke-width:1.6; transition:stroke .3s ease; }
+    /* active flow glows with the forge's own heat */
+    .edge.flow { stroke:#ff6a2b; stroke-dasharray:6 6; animation:dash 1s linear infinite; stroke-width:2.2; }
+    .edge.flow.loop { stroke:#ff5468; }
+    @keyframes dash { to { stroke-dashoffset:-24; } }
+    .ehead { fill:#334155; }
+    .elabel { fill:#475569; font-size:9.5px; letter-spacing:.06em; }
+  }
+</style>
+</head>
+<body class="text-slate-100 antialiased min-h-screen">
+<div class="max-w-[1240px] mx-auto px-5 py-7 pb-16">
+
+  <!-- header -->
+  <header class="flex items-end justify-between gap-4 flex-wrap mb-6 pt-1">
+    <div>
+      <div class="hud text-[10px] text-steel/70 font-semibold mb-2.5 flex items-center gap-2.5">
+        <span class="w-5 h-px bg-accent inline-block"></span>
+        Shiva · Kartikeya
+      </div>
+      <h1 class="text-[26px] sm:text-[30px] font-bold tracking-tight leading-none">
+        <span class="text-slate-100">Detection-as-Code</span>
+        <span class="bg-gradient-to-r from-ember via-accent to-amber1 bg-clip-text text-transparent
+                     [-webkit-text-fill-color:transparent] drop-shadow-[0_0_18px_rgba(255,106,43,.35)]">Foundry</span>
+      </h1>
+      <p class="font-sans text-[13px] text-steel mt-2.5 max-w-[580px]">
+        Blue authors · Red attacks · a deterministic referee proves · a human holds the deploy button.
+      </p>
+    </div>
+    <div class="flex items-center gap-2.5">
+      <div id="elapsed" class="hud font-mono text-[12px] text-steel/80 tabular-nums">00:00</div>
+      <div id="modeBadge" class="hud text-[10px] font-bold px-3 py-1.5 rounded-full border border-slate-700 text-steel/80 flex items-center gap-1.5">
+        <span class="w-1.5 h-1.5 rounded-full bg-steel/50 inline-block"></span> Idle
+      </div>
+    </div>
+  </header>
+
+  <!-- threat input -->
+  <div class="panel p-4 mb-4">
+    <label class="hud text-[10px] text-steel/70 font-semibold">Live threat</label>
+    <div class="flex gap-2 mt-2.5 flex-wrap">
+      <input id="title" type="text" autocomplete="off" value=""
+        placeholder="A CVE, a KEV entry, an ATT&amp;CK technique, an incident headline — paste anything…"
+        class="flex-1 min-w-[280px] font-mono bg-[#080b11] border border-slate-700 rounded-lg px-4 py-3 text-sm
+               placeholder:text-slate-600 focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent/60 transition">
+      <button id="run"
+        class="hud bg-gradient-to-b from-ember to-emberdeep text-white font-bold text-[13px] rounded-lg px-6 py-3
+               shadow-[0_10px_26px_-8px_rgba(255,106,43,.6),inset_0_1px_0_rgba(255,255,255,.25)]
+               hover:brightness-110 disabled:opacity-45 disabled:cursor-not-allowed disabled:shadow-none transition">
+        ⚒ Forge detection
+      </button>
+    </div>
+    <div class="flex gap-2 mt-3 flex-wrap items-center">
+      <span class="text-[11px] text-slate-600">
+        Whatever you type is authored live by a real model — there are no canned scenarios.
+        A threat it hasn't seen takes minutes per round; one it has replays from cache.
+      </span>
+      <span id="capNote" class="text-[11px] text-slate-600 ml-auto"></span>
+    </div>
+  </div>
+
+  <!-- error / notice banner -->
+  <div id="err" class="hidden rounded-2xl border border-red1/50 bg-red1/10 text-red1 px-4 py-3 text-sm mb-4"></div>
+
+  <!-- ===================== the agent graph ===================== -->
+  <div class="panel p-4 mb-4">
+    <div class="flex items-center justify-between mb-1 flex-wrap gap-2">
+      <h2 class="text-[12px] uppercase tracking-[.12em] text-slate-500 font-semibold">The workflow — live</h2>
+      <div class="flex items-center gap-3 text-[10.5px] text-slate-500">
+        <span class="flex items-center gap-1"><i class="w-2 h-2 rounded-full bg-cyan1 inline-block"></i>Analyst / Telemetry</span>
+        <span class="flex items-center gap-1"><i class="w-2 h-2 rounded-full bg-blue1 inline-block"></i>Blue</span>
+        <span class="flex items-center gap-1"><i class="w-2 h-2 rounded-full bg-red1 inline-block"></i>Red</span>
+        <span class="flex items-center gap-1"><i class="w-2 h-2 rounded-full bg-green1 inline-block"></i>Referee — deterministic, no LLM</span>
+      </div>
+    </div>
+    <svg id="graph" viewBox="0 0 1196 372" class="w-full h-auto select-none" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" class="ehead"/>
+        </marker>
+      </defs>
+
+      <!-- edges (drawn first so nodes sit on top) -->
+      <path id="e-analyst-telemetry" class="edge" marker-end="url(#ah)" d="M138,181 L163,181"/>
+      <path id="e-telemetry-blue"    class="edge" marker-end="url(#ah)" d="M286,181 L311,181"/>
+      <path id="e-blue-evaluate"     class="edge" marker-end="url(#ah)" d="M434,181 L459,181"/>
+      <path id="e-evaluate-battery"  class="edge" marker-end="url(#ah)" d="M582,181 L607,181"/>
+      <path id="e-battery-red"       class="edge" marker-end="url(#ah)" d="M730,181 L755,181"/>
+      <path id="e-red-verify"        class="edge" marker-end="url(#ah)" d="M878,181 L903,181"/>
+      <path id="e-verify-verdict"    class="edge" marker-end="url(#ah)" d="M1026,181 L1051,181"/>
+      <!-- the self-repair loop: verdict → back to Blue -->
+      <path id="e-loop" class="edge loop-path" marker-end="url(#ah)"
+            d="M1115,150 C1115,104 1105,96 1065,96 L425,96 C385,96 375,104 375,150"/>
+      <!-- exit: verdict → proof bundle (converged, or capped at the round limit) -->
+      <path id="e-verdict-bundle" class="edge" marker-end="url(#ah)" d="M1115,212 L1115,270"/>
+
+      <text x="728" y="88" text-anchor="middle" class="elabel" id="looplbl">REPAIR · verdict ≠ real-coverage → re-author on the evidence</text>
+
+      <!-- loop region hint: encloses blue(316) … verdict(1174) -->
+      <rect x="306" y="132" width="872" height="98" rx="16" fill="none" stroke="#1e293b" stroke-dasharray="4 5"/>
+      <text x="320" y="126" class="elabel">SELF-REPAIR LOOP</text>
+
+      <!-- nodes -->
+      <g class="gnode" data-k="analyst" data-r="llm">
+        <rect x="20" y="150" width="118" height="62" rx="14"/>
+        <text x="79" y="174" text-anchor="middle" font-size="17">🔎</text>
+        <text x="79" y="196" text-anchor="middle" font-size="10.5" font-weight="700" class="glabel">Analyst</text>
+      </g>
+      <g class="gnode" data-k="telemetry" data-r="llm">
+        <rect x="168" y="150" width="118" height="62" rx="14"/>
+        <text x="227" y="174" text-anchor="middle" font-size="17">📊</text>
+        <text x="227" y="196" text-anchor="middle" font-size="10.5" font-weight="700" class="glabel">Telemetry</text>
+      </g>
+      <g class="gnode" data-k="blue" data-r="llm">
+        <rect x="316" y="150" width="118" height="62" rx="14"/>
+        <text x="375" y="174" text-anchor="middle" font-size="17">🔵</text>
+        <text x="375" y="196" text-anchor="middle" font-size="10.5" font-weight="700" class="glabel">Blue · author</text>
+      </g>
+      <g class="gnode" data-k="evaluate" data-r="ref">
+        <rect x="464" y="150" width="118" height="62" rx="14"/>
+        <text x="523" y="174" text-anchor="middle" font-size="17">⚖️</text>
+        <text x="523" y="196" text-anchor="middle" font-size="10.5" font-weight="700" class="glabel">Evaluate</text>
+      </g>
+      <g class="gnode" data-k="battery" data-r="ref">
+        <rect x="612" y="150" width="118" height="62" rx="14"/>
+        <text x="671" y="174" text-anchor="middle" font-size="17">⚙️</text>
+        <text x="671" y="196" text-anchor="middle" font-size="10.5" font-weight="700" class="glabel">Battery</text>
+      </g>
+      <g class="gnode" data-k="red" data-r="llm">
+        <rect x="760" y="150" width="118" height="62" rx="14"/>
+        <text x="819" y="174" text-anchor="middle" font-size="17">🔴</text>
+        <text x="819" y="196" text-anchor="middle" font-size="10.5" font-weight="700" class="glabel">Red · propose</text>
+      </g>
+      <g class="gnode" data-k="verify" data-r="ref">
+        <rect x="908" y="150" width="118" height="62" rx="14"/>
+        <text x="967" y="174" text-anchor="middle" font-size="17">🔬</text>
+        <text x="967" y="196" text-anchor="middle" font-size="10.5" font-weight="700" class="glabel">Red · verify</text>
+      </g>
+      <g class="gnode" data-k="verdict" data-r="ref">
+        <rect x="1056" y="150" width="118" height="62" rx="14"/>
+        <text x="1115" y="174" text-anchor="middle" font-size="17">🏁</text>
+        <text x="1115" y="196" text-anchor="middle" font-size="10.5" font-weight="700" class="glabel">Verdict</text>
+      </g>
+      <g class="gnode" data-k="bundle" data-r="gate">
+        <rect x="1056" y="270" width="118" height="62" rx="14"/>
+        <text x="1115" y="294" text-anchor="middle" font-size="17">📦</text>
+        <text x="1115" y="316" text-anchor="middle" font-size="10.5" font-weight="700" class="glabel">Proof bundle</text>
+      </g>
+
+      <!-- round counter, parked under Blue -->
+      <text x="375" y="248" text-anchor="middle" font-size="10.5" fill="#64748b" id="roundTag"></text>
+    </svg>
+  </div>
+
+  <!-- min-w-0 on both columns: a grid item defaults to min-width:auto, so the wide
+       <pre> of Sigma YAML would refuse to shrink and push the page sideways. -->
+  <div class="grid grid-cols-1 lg:grid-cols-[1.05fr_.95fr] gap-4">
+    <div class="flex flex-col gap-4 min-w-0">
+      <!-- verdict hero -->
+      <div class="panel p-5 text-center">
+        <div id="roundlbl" class="text-[12px] uppercase tracking-[.1em] text-slate-400">awaiting a threat</div>
+        <div id="badge" class="inline-block my-2.5 text-3xl font-extrabold px-6 py-2 rounded-2xl border border-slate-700 text-slate-500 transition">READY</div>
+        <div id="metrics" class="flex justify-center gap-4 flex-wrap text-[12.5px] text-slate-400 tabular-nums"></div>
+        <div id="verdictNote" class="hidden text-[12px] text-slate-400 mt-3 max-w-[440px] mx-auto leading-relaxed"></div>
+      </div>
+      <!-- rule -->
+      <div class="panel p-5">
+        <h2 id="rulehdr" class="text-[12px] uppercase tracking-[.12em] text-slate-500 font-semibold mb-3">Detection rule</h2>
+        <pre id="rule" class="m-0 bg-[#0c0e15] border border-slate-700 rounded-xl p-3 overflow-auto font-mono text-[12px] leading-relaxed text-slate-300 h-[300px]">// Blue writes the Sigma rule here, live, and rewrites it every round…</pre>
+      </div>
+    </div>
+
+    <div class="flex flex-col gap-4 min-w-0">
+      <!-- agent console: raw model output as it is generated -->
+      <div class="panel p-5">
+        <div class="flex items-center justify-between gap-2 mb-3 flex-wrap">
+          <h2 class="text-[12px] uppercase tracking-[.12em] text-slate-500 font-semibold">Agent console</h2>
+          <div class="flex items-center gap-2">
+            <span id="tokTag" class="font-mono text-[10.5px] text-slate-600"></span>
+            <span id="tokSrc" class="hidden text-[10px] font-bold tracking-wider px-2 py-[3px] rounded-full border"></span>
+          </div>
+        </div>
+        <pre id="tok" class="m-0 bg-[#0c0e15] border border-slate-700 rounded-xl p-3 overflow-auto font-mono text-[11.5px] leading-relaxed text-slate-400 h-[190px] whitespace-pre-wrap break-words">// the agent currently at work streams its raw output here…</pre>
+      </div>
+      <!-- live fight feed -->
+      <div class="panel p-5">
+        <h2 class="text-[12px] uppercase tracking-[.12em] text-slate-500 font-semibold mb-3">Blue ↔ Red — live</h2>
+        <div id="feed" class="h-[330px] overflow-auto flex flex-col gap-2"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- timeline -->
+  <div class="panel p-5 mt-4">
+    <h2 class="text-[12px] uppercase tracking-[.12em] text-slate-500 font-semibold mb-3">Convergence timeline</h2>
+    <div id="tl" class="flex gap-2.5 flex-wrap"><span class="text-[13px] text-slate-500">rounds appear as the loop runs…</span></div>
+  </div>
+
+  <!-- money shot -->
+  <div id="final" class="hidden mt-4">
+    <div class="rounded-2xl p-4 border border-slate-700 bg-slate-900">
+      <div class="text-[11px] uppercase tracking-[.1em] text-slate-500 font-semibold">Reproducibility hash</div>
+      <div id="hash" class="font-mono text-[11.5px] text-green1 break-all mt-1.5"></div>
+      <div class="text-[11.5px] text-slate-500 mt-2">Deterministic: same threat → same rule → same hash. Grounding never enters this hash.</div>
+    </div>
+  </div>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+
+/* ---------------- graph state ---------------- */
+const gnodes = {};
+document.querySelectorAll('.gnode').forEach(n => gnodes[n.dataset.k] = n);
+const ORDER = ['analyst','telemetry','blue','evaluate','battery','red','verify','verdict','bundle'];
+const EDGE_INTO = {
+  telemetry:'e-analyst-telemetry', blue:'e-telemetry-blue', evaluate:'e-blue-evaluate',
+  battery:'e-evaluate-battery', red:'e-battery-red', verify:'e-red-verify',
+  verdict:'e-verify-verdict', bundle:'e-verdict-bundle',
+};
+
+function clearFlow(){ document.querySelectorAll('.edge').forEach(e => e.classList.remove('flow','loop')); }
+
+// `work` = a model call is in flight for this agent (from the provider's token sink).
+function work(k){
+  clearFlow();
+  Object.values(gnodes).forEach(n => n.classList.remove('work'));
+  if (!gnodes[k]) return;
+  gnodes[k].classList.add('work');
+  const e = EDGE_INTO[k] && document.getElementById(EDGE_INTO[k]);
+  if (e) e.classList.add('flow');
+}
+// `done` = the graph node actually completed.
+function done(k){
+  if (!gnodes[k]) return;
+  gnodes[k].classList.remove('work');
+  gnodes[k].classList.add('done');
+}
+// The referee never "thinks" — it lands. Flash it green on arrival.
+function refHit(k){
+  const n = gnodes[k]; if (!n) return;
+  clearFlow();
+  n.classList.add('done','hit');
+  setTimeout(() => n.classList.remove('hit'), 620);
+}
+function loopBack(){
+  clearFlow();
+  const e = document.getElementById('e-loop');
+  e.classList.add('flow','loop');
+  $('#looplbl').setAttribute('fill', '#fb5e7e');
+  setTimeout(() => $('#looplbl').setAttribute('fill', '#475569'), 2200);
+}
+function resetGraph(){
+  clearFlow();
+  Object.values(gnodes).forEach(n => n.classList.remove('work','done','hit'));
+  $('#roundTag').textContent = '';
+}
+
+/* ---------------- timers ---------------- */
+let t0 = 0, timer = null, tokT0 = 0;
+function startTimer(){
+  t0 = Date.now(); clearInterval(timer);
+  timer = setInterval(() => {
+    const s = Math.floor((Date.now() - t0) / 1000);
+    $('#elapsed').textContent = `${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
+    if (tokT0) $('#tokTag').textContent = `${curTag} · ${Math.floor((Date.now()-tokT0)/1000)}s · ${curBuf.length} chars`;
+  }, 500);
+}
+function stopTimer(){ clearInterval(timer); timer = null; tokT0 = 0; }
+
+/* ---------------- verdict badge ---------------- */
+const BADGE = {
+  'broken':        ['text-red1 border-red1/50 bg-red1/10',       '❌ BROKEN'],
+  'brittle':       ['text-amber1 border-amber1/50 bg-amber1/10', '⚠️ BRITTLE'],
+  'real-coverage': ['text-green1 border-green1/50 bg-green1/10', '✅ REAL-COVERAGE'],
+};
+function setVerdict(v){
+  const b = $('#badge');
+  const [cls, txt] = BADGE[v] || ['text-slate-500 border-slate-700', v || '…'];
+  b.className = 'inline-block my-2.5 text-3xl font-extrabold px-6 py-2 rounded-2xl border transition animate-pop ' + cls;
+  b.textContent = txt;
+}
+
+/* ---------------- feed ---------------- */
+const WHO = { blue:'text-blue1', red:'text-red1', ref:'text-green1', sys:'text-cyan1' };
+function feed(cls, who, txt, chips){
+  const d = document.createElement('div');
+  d.className = 'border border-slate-700/70 rounded-xl px-3 py-2 text-[13px] bg-white/[.015] animate-fade';
+  const c = (chips && chips.length)
+    ? '<div class="flex flex-wrap gap-1.5 mt-1.5">' + chips.map(x => `<span class="chip">${x}</span>`).join('') + '</div>' : '';
+  d.innerHTML = `<div class="font-bold text-[11px] uppercase tracking-wide ${WHO[cls]||'text-slate-400'}">${who}</div>
+                 <div class="text-slate-400 mt-0.5">${txt}</div>${c}`;
+  const f = $('#feed'); f.appendChild(d); f.scrollTop = f.scrollHeight;
+}
+const cite = s => (s||[]).map(c => `<b class="text-cyan1">${c.source}</b> ${(c.techniques||[]).join('/')} · ${c.title}`);
+
+/* ---------------- token console ----------------
+   Shows the agent's raw output as it arrives. `cached` is surfaced honestly:
+   REPLAY means these bytes came off disk, not off the wire — a demo must never
+   dress a cache hit up as live generation. */
+let curBuf = '', curTag = '', curAgent = '';
+const AGENT_NAME = { analyst:'🔎 Analyst', telemetry:'📊 Telemetry', blue:'🔵 Blue', red:'🔴 Red' };
+function tokOpen(agent, tag, cached){
+  curBuf = ''; curTag = tag; curAgent = agent; tokT0 = Date.now();
+  $('#tok').textContent = '';
+  $('#tokTag').textContent = tag;
+  const b = $('#tokSrc');
+  b.classList.remove('hidden');
+  b.className = cached
+    ? 'text-[10px] font-bold tracking-wider px-2 py-[3px] rounded-full border border-slate-600 text-slate-400'
+    : 'text-[10px] font-bold tracking-wider px-2 py-[3px] rounded-full border border-green1/50 bg-green1/10 text-green1';
+  b.textContent = cached ? '⟳ REPLAY (cached)' : '● GENERATING';
+  work(agent);
+  if (agent === 'blue') $('#rule').textContent = '';
+}
+function tokChunk(agent, chunk){
+  curBuf += chunk;
+  const el = $('#tok');
+  el.textContent = curBuf;
+  el.scrollTop = el.scrollHeight;
+  if (agent === 'blue'){                       // watch the Sigma rule type itself
+    const r = $('#rule');
+    r.textContent = curBuf;
+    r.scrollTop = r.scrollHeight;
+  }
+}
+function tokReset(){
+  curBuf = '';
+  $('#tok').textContent = '// attempt discarded (retrying) …';
+}
+function tokClose(){ tokT0 = 0; }
+
+/* ---------------- status ---------------- */
+fetch('/status').then(r => r.json()).then(d => {
+  if (!d.live_available){
+    $('#capNote').textContent = 'no model key set — live authoring unavailable';
+    $('#capNote').className = 'text-[11px] text-red1/80 ml-auto';
+    $('#run').disabled = true;
+  } else {
+    $('#capNote').textContent = `live · ${d.model || d.live_provider} · ${d.cached_calls} cached call(s)`;
+  }
+}).catch(()=>{});
+
+/* ---------------- the run ---------------- */
+function run(){
+  const title = $('#title').value.trim();
+  if (!title){ $('#title').focus(); return; }
+  $('#run').disabled = true;
+  $('#feed').innerHTML = ''; $('#tl').innerHTML = ''; $('#err').classList.add('hidden');
+  $('#final').classList.add('hidden'); $('#metrics').textContent = '';
+  $('#verdictNote').classList.add('hidden'); $('#verdictNote').innerHTML = '';
+  $('#tok').textContent = ''; $('#tokSrc').classList.add('hidden'); $('#tokTag').textContent = '';
+  $('#rule').textContent = '// waiting for Blue…';
+  $('#rule').className = 'm-0 bg-[#0c0e15] border border-slate-700 rounded-xl p-3 overflow-auto font-mono text-[12px] leading-relaxed text-slate-300 h-[300px]';
+  $('#rulehdr').textContent = 'Detection rule';
+  setVerdict(''); $('#badge').textContent = 'RUNNING';
+  $('#roundlbl').textContent = 'authoring live — a threat not in cache takes minutes per round';
+  resetGraph(); startTimer();
+
+  const es = new EventSource('/stream?' + new URLSearchParams({ title }));
+
+  es.addEventListener('start', e => { const d = JSON.parse(e.data);
+    const b = $('#modeBadge');
+    b.className = 'text-[11px] font-bold tracking-wider px-3 py-1.5 rounded-full border border-green1/50 bg-green1/10 text-green1';
+    b.textContent = '● LIVE — ' + d.provider;
+    feed('sys','System', `Threat received — <b>${d.source_ref}</b>. Authoring live via ${d.provider}.`);
+  });
+
+  // token stream — the agents thinking, character by character
+  es.addEventListener('llm', e => { const d = JSON.parse(e.data);
+    if (d.event === 'open')  tokOpen(d.agent, d.tag, d.cached);
+    else if (d.event === 'token') tokChunk(d.agent, d.chunk);
+    else if (d.event === 'reset') tokReset();
+    else if (d.event === 'close') tokClose();
+  });
+
+  es.addEventListener('analyst', e => { const d = JSON.parse(e.data); done('analyst');
+    if (d.stage === 'ingest') feed('sys','🔎 Analyst', `Normalized threat: <b>${d.title}</b>`, d.techniques||[]);
+    else feed('sys','🔎 Analyst', `Identified <b>${d.behaviors}</b> detectable behavior(s).`);
+  });
+  es.addEventListener('telemetry', e => { const d = JSON.parse(e.data); done('telemetry');
+    feed('sys','📊 Telemetry', `Built the fixed test set: <b>${d.positives}</b> attack + <b>${d.negatives}</b> benign events.`);
+  });
+  es.addEventListener('blue', e => { const d = JSON.parse(e.data); done('blue');
+    $('#rule').textContent = d.yaml;                    // the parsed rule, not the raw stream
+    $('#rulehdr').textContent = `Detection rule — round ${d.round} (${d.rule_id})`;
+    $('#roundTag').textContent = `round ${d.round}`;
+    feed('blue','🔵 Blue', `Round ${d.round}: authored <b>${d.title}</b>`, cite(d.sources));
+  });
+  es.addEventListener('evaluate', e => { const d = JSON.parse(e.data); refHit('evaluate');
+    $('#metrics').innerHTML = `TP <b class="text-slate-100">${d.tp}</b> · FN <b class="text-slate-100">${d.fn}</b> · FP <b class="text-slate-100">${d.fp}</b> · TN <b class="text-slate-100">${d.tn}</b> · recall <b class="text-slate-100">${d.recall}</b>`;
+    feed('ref','⚖️ Referee', `Evaluated against the corpus: TP=${d.tp} FN=${d.fn} FP=${d.fp} TN=${d.tn}.`);
+  });
+  es.addEventListener('battery', e => { const d = JSON.parse(e.data); refHit('battery');
+    feed('ref','⚙️ Referee', `Mutation battery: <b>${d.evaded}/${d.total}</b> evaded (high-sev ${d.high_sev}).`);
+  });
+  es.addEventListener('red_propose', e => { const d = JSON.parse(e.data); done('red');
+    if (d.refused){
+      // Loud on purpose: a silent refusal would look identical to "the rule held".
+      $('#err').innerHTML = '⚠️ <b>Red-team adversary declined the request</b> (model safety filter). '
+        + 'This round was <b>not adversarially tested</b> — the verdict is battery-only and cannot be real-coverage.';
+      $('#err').className = 'rounded-2xl border border-amber1/50 bg-amber1/10 text-amber1 px-4 py-3 text-sm mb-4';
+      $('#err').classList.remove('hidden');
+      feed('red','🔴 Red', '🚫 <b>Declined the adversary role</b> — no proposals. Round not adversarially tested.');
+    } else {
+      feed('red','🔴 Red', `Proposed <b>${d.proposed}</b> evasion(s) — grounded in real tradecraft.`, cite(d.sources));
+    }
+  });
+  es.addEventListener('red_verify', e => { const d = JSON.parse(e.data); refHit('verify');
+    feed('ref','🔬 Referee', `Engine-verified red-team: <b>${d.verified}/${d.total}</b> are real bypasses; the rest discarded.`);
+    (d.proposals||[]).forEach(p => feed('red','🔴 Red',
+      `${p.verified ? '💥 <b>bypass holds</b>' : '🛑 caught (discarded)'}: ${p.description}`, [p.class, p.severity]));
+  });
+  es.addEventListener('verdict', e => { const d = JSON.parse(e.data); refHit('verdict');
+    setVerdict(d.verdict); $('#roundlbl').textContent = `round ${d.round} · ${d.outcome}`;
+    const [cls, txt] = BADGE[d.verdict] || ['text-slate-400', d.verdict];
+    const card = document.createElement('div');
+    card.className = 'flex-1 min-w-[150px] border border-slate-700 rounded-xl p-3 bg-white/[.015] animate-fade';
+    card.innerHTML = `<div class="text-[11px] uppercase tracking-wider text-slate-500">Round ${d.round} · ${d.outcome}</div>
+      <div class="font-extrabold my-0.5 ${cls.split(' ')[0]}">${txt}</div>
+      <div class="text-[11.5px] text-slate-400 tabular-nums">FP ${d.fp} · FN ${d.fn} · battery-evaded ${d.battery_evaded} · red-verified ${d.redteam_verified}</div>`;
+    if ($('#tl').querySelector('span')) $('#tl').innerHTML = '';
+    $('#tl').appendChild(card);
+    feed('ref','🏁 Referee', `Round ${d.round} verdict: <b>${d.verdict}</b> → ${d.outcome}.`);
+    if (d.outcome === 'repair'){
+      loopBack();
+      feed('sys','System', 'Looping back to Blue with the proven evidence — re-author and re-prove.');
+    }
+  });
+  // (Kartikeya Gate removed from the demo — the backend still emits a 'gate' event; the
+  // UI intentionally ignores it and routes verdict straight to the proof bundle.)
+  es.addEventListener('bundle', e => { const d = JSON.parse(e.data); done('bundle');
+    $('#rule').textContent = d.final_rule;
+    $('#rule').className = 'm-0 bg-[#0c0e15] border border-green1/45 rounded-xl p-3 overflow-auto font-mono text-[12px] leading-relaxed text-slate-300 h-[300px] shadow-[0_0_22px_rgba(52,211,153,.12)]';
+    $('#rulehdr').textContent = `✅ FIRST-VERSION rule — ${d.rule_title}`;
+    $('#hash').textContent = d.hash; $('#final').classList.remove('hidden');
+    // The frame the whole demo lands on: this is a validated STARTING POINT the
+    // detection team hardens further — not a claim of finished, forever-proof coverage.
+    const n = $('#verdictNote');
+    n.classList.remove('hidden');
+    if (d.verdict === 'real-coverage'){
+      n.innerHTML = '<b class="text-green1">A validated first-version detection.</b> It fires on every attack in the corpus, '
+        + 'stays silent on benign look-alikes, and survived every real attack Red threw at it. '
+        + 'This is a proven <b>starting point</b> your detection team builds on — not a finished, forever-bulletproof rule.';
+    } else {
+      n.innerHTML = 'This first draft is <b>not yet a safe starting point</b> — Red still walked past it. '
+        + 'The Foundry is telling you the truth so your detection team knows exactly what to harden before shipping.';
+    }
+    feed('sys','System', `Proof bundle sealed → <span class="font-mono text-[11px]">${d.bundle_dir||'Outputs/'}</span> 🔒`);
+  });
+
+  let finished = false;
+  function fail(msg){
+    $('#err').textContent = msg;
+    $('#err').className = 'rounded-2xl border border-red1/50 bg-red1/10 text-red1 px-4 py-3 text-sm mb-4';
+    $('#err').classList.remove('hidden');
+    $('#badge').textContent = 'FAILED';
+  }
+  function stop(){
+    es.close(); $('#run').disabled = false; clearFlow();
+    Object.values(gnodes).forEach(n => n.classList.remove('work'));
+    stopTimer();
+  }
+
+  es.addEventListener('error', e => {
+    // A server-sent 'error' event carries data; a transport drop does not.
+    if (e.data){
+      const d = JSON.parse(e.data);
+      finished = true;
+      fail(d.message + (d.hint ? '  — ' + d.hint : ''));
+      feed('sys','System', 'Run failed: ' + d.message);
+    }
+    stop();
+  });
+  es.addEventListener('done', () => { finished = true; stop(); });
+  // A transport-level drop (server down, restarted, network cut). Without this the
+  // page sits on RUNNING forever and looks like a hung agent rather than a dead pipe.
+  es.onerror = () => {
+    if (!finished) fail('Lost the connection to the Foundry server before the run finished. '
+                        + 'Is it still running on this port? Completed steps are cached, so a re-run resumes cheaply.');
+    stop();
+  };
+}
+$('#run').addEventListener('click', run);
+$('#title').addEventListener('keydown', e => { if (e.key === 'Enter') run(); });
+</script>
+</body>
+</html>

@@ -1,0 +1,52 @@
+# Vendored from redcanaryco/atomic-red-team — atomics/T1105/T1105.yaml
+# Real content (commands + input_argument defaults are verbatim), trimmed to the
+# certutil tests this Foundry scenario targets. Fetched 2026-07-13.
+# Live seam: set ATOMIC_RED_TEAM_DIR to a full clone to read every T1105 test.
+attack_technique: T1105
+display_name: Ingress Tool Transfer
+atomic_tests:
+  - name: certutil download (urlcache)
+    description: |
+      Use certutil -urlcache argument to download a file from the web. Note - the
+      file is also displayed in the cmd window as it downloads.
+    supported_platforms:
+      - windows
+    input_arguments:
+      remote_file:
+        description: URL of file to copy
+        type: url
+        default: https://raw.githubusercontent.com/redcanaryco/atomic-red-team/master/LICENSE.txt
+      local_path:
+        description: Path to save file to
+        type: path
+        default: Atomic-license.txt
+    executor:
+      command: |
+        cmd /c certutil -urlcache -split -f #{remote_file} #{local_path}
+      name: command_prompt
+      elevation_required: false
+
+  - name: certutil download (verifyctl)
+    description: |
+      Use certutil -verifyctl argument to download a file from the web. Note - the
+      file is written to the current working directory as certutil-*.
+    supported_platforms:
+      - windows
+    input_arguments:
+      remote_file:
+        description: URL of file to copy
+        type: url
+        default: https://raw.githubusercontent.com/redcanaryco/atomic-red-team/master/LICENSE.txt
+      local_path:
+        description: Path to save file to
+        type: path
+        default: Atomic-license.txt
+    executor:
+      command: |
+        $datePath = "certutil-$(Get-Date -format yyyy_MM_dd)"
+        New-Item -Path $datePath -ItemType Directory
+        Set-Location $datePath
+        certutil -verifyctl -split -f #{remote_file}
+        Get-ChildItem | Where-Object {$_.Name -notlike "*.txt"} | Foreach-Object { Move-Item $_.Name -Destination #{local_path} }
+      name: powershell
+      elevation_required: false
