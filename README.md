@@ -30,6 +30,20 @@ version, and an honest record of how the rule was hardened until it held.
 > the coverage verdict, red-team verification, and the deployment gate — is a
 > deterministic referee. Same input → same verdict → same reproducibility hash.
 
+---
+
+**Two pipelines share this agent cast.** The one described above **proves** — Blue
+authors, Red attacks, a deterministic referee decides. The
+[**Review Chain**](#the-review-chain--a-second-different-pipeline---chain-and-the-default-ui)
+**reviews** — draft → Red Team → revision → SOC Lead → final rule, with every note
+that shaped it. Different question, different deliverable; pick per what you need.
+
+📄 **See real output first:**
+[`examples/joomla-icagenda-cve-2026-48939/review-history.md`](examples/joomla-icagenda-cve-2026-48939/review-history.md)
+— a live run on a CISA KEV entry, three rule versions, eight reviewer findings.
+
+---
+
 ## Run it
 ```bash
 pip install -r requirements.txt          # or just run --evals on stdlib alone
@@ -82,6 +96,40 @@ pressures, and the trail shows exactly what each pass cost.
 
 Output lands in `Outputs/<rule-slug>/` as `final-rule.yml`, `review-history.md`
 (the full progression, rendered) and `review.json`.
+
+### A worked example — read the actual output
+
+**→ [`examples/joomla-icagenda-cve-2026-48939/`](examples/joomla-icagenda-cve-2026-48939/)**
+— a real run on CVE-2026-48939 (Joomla iCagenda upload-to-RCE, CISA KEV), authored by
+`claude-opus-4-8`. Three rule versions, eight findings, the whole trail:
+[`review-history.md`](examples/joomla-icagenda-cve-2026-48939/review-history.md).
+
+Blue's first draft fired on a web daemon spawning a shell **that runs recon commands**.
+Both reviewers took it apart — in opposite directions:
+
+> **Red Team:** *"No — I'd just skip the recon commands (or use a container's busybox
+> shell) and this rule never fires despite a full RCE."*
+>
+> `R1` mandatory `recon_intent` turns a lineage detection into a keyword detection ·
+> `R2` on Alpine `/bin/sh` is busybox, so every shell clause misses ·
+> `R3` literal `contains` dies to shell obfuscation ·
+> `R4` `setsid`/double-fork re-parents to PID 1 and lineage fails
+
+> **SOC Lead:** *"No — this fires on your own benign cron example on day one; the parent
+> scoping is broken and it'll bury the rota in www-data noise."*
+>
+> `S1` the `OR` made web-server parentage optional — any www-data process spawning a
+> shell fired ·
+> `S2` php-fpm→php is normal web-app behaviour, not RCE ·
+> `S3` the alert carried one field, so the analyst pivots consoles ·
+> `S4` `level: high` on that noise floor burns out the on-call
+
+Red pushed Blue to **broaden**; the SOC Lead pushed it to **narrow** straight back.
+That tension is the product: hardening against evasion raises alert volume, and the
+final rule is the one that survived both pressures. SOC reviews last, so what ships is
+tuned for the queue — v3 made parent lineage mandatory, excluded the known-good
+interpreter chains, expanded the triage fields, dropped to `level: medium`, and carries
+a three-step response playbook with a containment threshold.
 
 > **Reviewed, not validated — and the artifact says so.** This chain does not invoke
 > the proof core. It never executes the rule against telemetry, counts no false
